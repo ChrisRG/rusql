@@ -43,12 +43,11 @@ fn parse_input(line: String) {
     if line.as_bytes()[0] == b'.' {
         println!("Meta command");
     } else {
-        match prepare_statement(&line) {
-            Some(stmt) => {
-                execute_statement(stmt);
-                println!("Executed.");
-            }
-            None => println!("Unrecognized command {}", line),
+        if let Some(stmt) = prepare_statement(&line) {
+            execute_statement(stmt);
+            println!("Executed.");
+        } else {
+            println!("Unrecognized command {}", line);
         }
     }
 }
@@ -57,13 +56,16 @@ pub struct Stmt {
     stmt_type: StmtType,
 }
 
+pub struct Row;
+
 pub enum StmtType {
-    StmtInsert,
+    StmtInsert(Row),
     StmtSelect,
 }
 
 use StmtType::*;
 
+// Parses the input
 fn prepare_statement(line: &String) -> Option<Stmt> {
     match line.as_str() {
         "insert" => Some(Stmt {
@@ -76,6 +78,7 @@ fn prepare_statement(line: &String) -> Option<Stmt> {
     }
 }
 
+// Executes the command
 fn execute_statement(stmt: Stmt) {
     match stmt.stmt_type {
         StmtInsert => {
