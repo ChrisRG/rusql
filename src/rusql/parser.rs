@@ -1,10 +1,11 @@
-use super::ast::{ParseError, Row, Stmt, StmtType};
+use super::pager::{ParseError, Row, Stmt, StmtType, Table};
 
-pub fn parse_input(line: String) {
+pub fn parse_input(table: &mut Table, line: String) {
     if line.as_bytes()[0] == b'.' {
         println!("Meta command");
     } else {
         // Check if there are args following command to pass into parser
+        // Otherwise args is an empty string
         let split = match line.find(' ') {
             Some(idx) => idx,
             None => line.len(),
@@ -12,7 +13,7 @@ pub fn parse_input(line: String) {
         let (cmd, arg_str) = line.split_at(split);
         match prepare_statement(cmd.to_string(), arg_str.to_string()) {
             Ok(stmt) => {
-                execute_statement(stmt);
+                execute_statement(table, stmt);
                 println!("Executed.")
             }
             Err(e) => println!("[Error] {}", e),
@@ -61,13 +62,17 @@ pub fn prepare_insert(arg_str: String) -> Result<Row, ParseError> {
 }
 
 // Executes the command
-pub fn execute_statement(stmt: Stmt) {
+pub fn execute_statement(table: &mut Table, stmt: Stmt) {
     match stmt.stmt_type {
-        StmtType::StmtInsert(_) => {
-            println!("Here we do an insert.");
-        }
+        StmtType::StmtInsert(row) => match table.insert(row) {
+            Ok(_) => println!("Successfully inserted."),
+            Err(e) => println!("[Error] {:?}", e),
+        },
         StmtType::StmtSelect => {
-            println!("Here we do a select.");
+            let rows = table.select();
+            for row in rows {
+                println!("{:?}", row);
+            }
         }
     }
 }

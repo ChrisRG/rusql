@@ -1,13 +1,15 @@
 extern crate rustyline;
 
-mod ast;
+mod pager;
 mod parser;
 
 pub mod repl {
+    use super::pager::Table;
     use super::parser;
 
     pub fn run() {
         let mut rl = rustyline::Editor::<()>::new();
+        let mut table = Table::new();
 
         loop {
             let readline = rl.readline("db > ");
@@ -19,7 +21,7 @@ pub mod repl {
                         ".exit" => {
                             break;
                         }
-                        _ => parser::parse_input(line),
+                        _ => parser::parse_input(&mut table, line),
                     }
                 }
                 Err(rustyline::error::ReadlineError::Interrupted) => {

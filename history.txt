@@ -1,5 +1,4 @@
 #V2
-insert
-.sadk
-insert hi hi hi
 insert 1 hi hi
+insert 2 hey hey
+select
