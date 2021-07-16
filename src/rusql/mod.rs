@@ -8,8 +8,9 @@ pub mod repl {
     use super::parser;
 
     pub fn run() {
+        let filepath = "../test.db";
         let mut rl = rustyline::Editor::<()>::new();
-        let mut table = Table::new();
+        let mut table = Table::db_open(filepath);
 
         loop {
             let readline = rl.readline("db > ");
@@ -19,6 +20,7 @@ pub mod repl {
                     rl.add_history_entry(line.as_str());
                     match line.as_str() {
                         ".exit" => {
+                            table.db_close();
                             break;
                         }
                         _ => parser::parse_input(&mut table, line),
