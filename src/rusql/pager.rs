@@ -64,6 +64,7 @@ impl Table {
     }
 
     pub fn db_close(&mut self) {
+        println!("Closing db");
         for i in 0..TABLE_MAX_PAGES {
             if self.pager.pages[i].is_none() {
                 continue;
@@ -92,8 +93,6 @@ impl Table {
             let range = offset..offset + ROW_SIZE;
             if let Some(page) = &mut self.pager.pages[page_num] {
                 page.write(range, row).unwrap();
-                println!("Written page");
-                println!("{:?}", self.pager.pages[page_num]);
                 self.num_rows += 1;
             }
         } else {
@@ -109,7 +108,7 @@ impl Table {
         for row_num in 0..self.num_rows {
             let (page_num, offset) = self.row_slot(row_num).unwrap();
             if let Some(page) = &self.pager.pages[page_num] {
-                let row_bytes = &page.bytes[offset..ROW_SIZE];
+                let row_bytes = &page.bytes[offset..offset + ROW_SIZE];
                 match Row::from_bytes(row_bytes) {
                     Ok(row) => rows.push(row),
                     Err(e) => return Err(e),
@@ -135,10 +134,7 @@ impl Pager {
             .open(path)
         {
             let file_length = fd.seek(SeekFrom::End(0)).unwrap() as usize;
-            let mut pages: Vec<Option<Page>> = Vec::new();
-            for i in 0..TABLE_MAX_PAGES {
-                pages[i] = None;
-            }
+            let pages: Vec<Option<Page>> = vec![None; TABLE_MAX_PAGES];
             Ok(Self {
                 file_descriptor: fd,
                 file_length,
@@ -161,6 +157,7 @@ impl Pager {
             });
         }
 
+        println!("Pages: {:?}", self.pages);
         if self.pages[page_num].is_none() {
             let mut page = vec![0; PAGE_SIZE];
             let mut num_pages = self.file_length / PAGE_SIZE;
@@ -192,10 +189,15 @@ impl Pager {
 
         let offset = (page_num * PAGE_SIZE) as u64;
 
+        println!("Setting file position at {}", offset);
         self.file_descriptor.seek(SeekFrom::Start(offset)).unwrap();
+
         if let Some(page) = &self.pages[page_num] {
+            println!("Writing: {:?}", page);
             let bytes = page.into_bytes();
             self.file_descriptor.write(&bytes).unwrap();
+            let curr_pos = self.file_descriptor.seek(SeekFrom::Current(0));
+            println!("Current position {:?}", curr_pos);
         }
         Ok(())
     }

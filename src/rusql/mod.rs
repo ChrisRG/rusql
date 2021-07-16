@@ -8,7 +8,7 @@ pub mod repl {
     use super::parser;
 
     pub fn run() {
-        let filepath = "../test.db";
+        let filepath = "test.db";
         let mut rl = rustyline::Editor::<()>::new();
         let mut table = Table::db_open(filepath);
 
