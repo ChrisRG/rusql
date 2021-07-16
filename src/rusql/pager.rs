@@ -3,12 +3,11 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::ops::Range;
-const TABLE_MAX_PAGES: usize = 100;
-const PAGE_SIZE: usize = 4096;
-const ROW_SIZE: usize = 291;
-const ROWS_PER_PAGE: usize = PAGE_SIZE / ROW_SIZE; // 14
-const TABLE_MAX_ROWS: usize = ROWS_PER_PAGE * TABLE_MAX_PAGES; // 1400
+const TABLE_MAX_PAGES: usize = 3;
+const PAGE_SIZE: usize = 528; // i.e. 4 rows per page; original 4096
+const ROW_SIZE: usize = 132; // i.e. 4 byte id + 64 byte username + 64 byte emai; Original 291
+const ROWS_PER_PAGE: usize = PAGE_SIZE / ROW_SIZE; // 4 / original 14
+const TABLE_MAX_ROWS: usize = ROWS_PER_PAGE * TABLE_MAX_PAGES; // 12 / original 1400
 
 pub struct Stmt {
     pub stmt_type: StmtType,
@@ -36,7 +35,11 @@ impl Row {
     }
 
     pub fn into_bytes(&self) -> Option<Vec<u8>> {
-        Some(bincode::serialize(&self).unwrap())
+        let mut serialized = bincode::serialize(&self).unwrap().to_vec();
+        // We need to force each row to be ROW_SIZE
+        // Resize fills the rest of the vec with 0s
+        serialized.resize(ROW_SIZE, 0u8);
+        Some(serialized)
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, ExecError> {
@@ -64,7 +67,6 @@ impl Table {
     }
 
     pub fn db_close(&mut self) {
-        println!("Closing db");
         for i in 0..TABLE_MAX_PAGES {
             if self.pager.pages[i].is_none() {
                 continue;
@@ -90,9 +92,8 @@ impl Table {
         }
         if let Some(row) = row_to_insert.into_bytes() {
             let (page_num, offset) = self.row_slot(self.num_rows)?;
-            let range = offset..offset + ROW_SIZE;
             if let Some(page) = &mut self.pager.pages[page_num] {
-                page.write(range, row).unwrap();
+                page.write(offset, row).unwrap();
                 self.num_rows += 1;
             }
         } else {
@@ -146,7 +147,7 @@ impl Pager {
             })
         }
     }
-    // Change output to offset for page position
+
     fn load_page(&mut self, page_num: usize) -> Result<(), ExecError> {
         if page_num > TABLE_MAX_PAGES {
             return Err(ExecError {
@@ -157,11 +158,10 @@ impl Pager {
             });
         }
 
-        println!("Pages: {:?}", self.pages);
         if self.pages[page_num].is_none() {
             let mut page = vec![0; PAGE_SIZE];
             let mut num_pages = self.file_length / PAGE_SIZE;
-            if self.file_length % PAGE_SIZE > 0 {
+            if self.file_length % PAGE_SIZE == 0 {
                 num_pages += 1;
             }
             if page_num <= num_pages {
@@ -170,10 +170,6 @@ impl Pager {
                     .seek(SeekFrom::Start(page_offset))
                     .unwrap();
                 self.file_descriptor.read(&mut page).unwrap();
-            } else {
-                return Err(ExecError {
-                    msg: format!("Page number out of bounds."),
-                });
             }
             self.pages[page_num] = Some(Page::from_bytes(page));
         }
@@ -189,15 +185,11 @@ impl Pager {
 
         let offset = (page_num * PAGE_SIZE) as u64;
 
-        println!("Setting file position at {}", offset);
         self.file_descriptor.seek(SeekFrom::Start(offset)).unwrap();
 
         if let Some(page) = &self.pages[page_num] {
-            println!("Writing: {:?}", page);
             let bytes = page.into_bytes();
             self.file_descriptor.write(&bytes).unwrap();
-            let curr_pos = self.file_descriptor.seek(SeekFrom::Current(0));
-            println!("Current position {:?}", curr_pos);
         }
         Ok(())
     }
@@ -213,8 +205,8 @@ impl Page {
         Self { bytes }
     }
 
-    pub fn write(&mut self, range: Range<usize>, row: Vec<u8>) -> Result<(), ExecError> {
-        self.bytes.splice(range, row);
+    pub fn write(&mut self, start: usize, row: Vec<u8>) -> Result<(), ExecError> {
+        self.bytes.splice(start..start + ROW_SIZE, row);
         Ok(())
     }
 
