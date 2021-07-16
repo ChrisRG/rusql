@@ -84,6 +84,7 @@ impl Table {
         return Ok((page_num, byte_offset));
     }
 
+    // TODO: check how rows are inserted, there are extra empty rows to fill up the page
     pub fn insert(&mut self, row_to_insert: Row) -> Result<(), ExecError> {
         if self.num_rows >= TABLE_MAX_ROWS {
             return Err(ExecError {
@@ -158,6 +159,7 @@ impl Pager {
             });
         }
 
+        // If page_num isn't in cache, we allocate a new page
         if self.pages[page_num].is_none() {
             let mut page = vec![0; PAGE_SIZE];
             let mut num_pages = self.file_length / PAGE_SIZE;

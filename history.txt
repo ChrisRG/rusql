@@ -1,3 +1,2 @@
 #V2
 select
-insert 1 ho ho
