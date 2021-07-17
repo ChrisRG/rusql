@@ -5,7 +5,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 const TABLE_MAX_PAGES: usize = 3;
 const PAGE_SIZE: usize = 528; // i.e. 4 rows per page; original 4096
-const ROW_SIZE: usize = 132; // i.e. 4 byte id + 64 byte username + 64 byte emai; Original 291
+const ROW_SIZE: usize = 132; // i.e. 1 byte flag + 3 byte id + 64 byte username + 64 byte email; Original 291
 const ROWS_PER_PAGE: usize = PAGE_SIZE / ROW_SIZE; // 4 / original 14
 const TABLE_MAX_ROWS: usize = ROWS_PER_PAGE * TABLE_MAX_PAGES; // 12 / original 1400
 
@@ -20,7 +20,8 @@ pub enum StmtType {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Row {
-    pub id: u32,
+    flag: u8,
+    id: u32,
     username: String,
     email: String,
 }
@@ -28,6 +29,7 @@ pub struct Row {
 impl Row {
     pub fn new(id: u32, username: String, email: String) -> Self {
         Self {
+            flag: 1u8,
             id,
             username,
             email,
@@ -42,9 +44,12 @@ impl Row {
         Some(serialized)
     }
 
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, ExecError> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Option<Self>, ExecError> {
+        if bytes[0] == 0x00 {
+            return Ok(None);
+        }
         match bincode::deserialize::<Row>(&bytes) {
-            Ok(row) => Ok(row),
+            Ok(row) => Ok(Some(row)),
             Err(_) => {
                 return Err(ExecError {
                     msg: String::from("Unable to deserialize row"),
@@ -112,7 +117,8 @@ impl Table {
             if let Some(page) = &self.pager.pages[page_num] {
                 let row_bytes = &page.bytes[offset..offset + ROW_SIZE];
                 match Row::from_bytes(row_bytes) {
-                    Ok(row) => rows.push(row),
+                    Ok(None) => {}
+                    Ok(Some(row)) => rows.push(row),
                     Err(e) => return Err(e),
                 }
             }
