@@ -1,5 +1,6 @@
 use bincode;
 use serde::{Deserialize, Serialize};
+use std::env::current_dir;
 use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -9,15 +10,38 @@ const ROW_SIZE: usize = 132; // i.e. 1 byte flag + 3 byte id + 64 byte username 
 const ROWS_PER_PAGE: usize = PAGE_SIZE / ROW_SIZE; // 4 / original 14
 const TABLE_MAX_ROWS: usize = ROWS_PER_PAGE * TABLE_MAX_PAGES; // 12 / original 1400
 
-pub struct Stmt {
-    pub stmt_type: StmtType,
+pub struct Cursor {
+    num_rows: usize,
+    row_num: usize,
+    end_of_table: bool,
 }
 
-pub enum StmtType {
-    StmtInsert(Row),
-    StmtSelect,
-}
+impl Cursor {
+    pub fn table_start(num_rows: usize) -> Self {
+        let end_of_table = num_rows == 0;
+        Self {
+            num_rows,
+            row_num: 0,
+            end_of_table,
+        }
+    }
 
+    pub fn table_end(num_rows: usize) -> Self {
+        let row_num = num_rows;
+        Self {
+            num_rows,
+            row_num,
+            end_of_table: true,
+        }
+    }
+
+    pub fn advance(&mut self) {
+        self.row_num += 1;
+        if self.row_num >= self.num_rows {
+            self.end_of_table = true;
+        }
+    }
+}
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Row {
     flag: u8,
@@ -81,7 +105,8 @@ impl Table {
         }
     }
 
-    pub fn row_slot(&mut self, row_num: usize) -> Result<(usize, usize), ExecError> {
+    pub fn cursor_value(&mut self, cursor: &Cursor) -> Result<(usize, usize), ExecError> {
+        let row_num = cursor.row_num;
         let page_num = row_num / ROWS_PER_PAGE;
         self.pager.load_page(page_num)?;
         let row_offset = row_num % ROWS_PER_PAGE;
@@ -89,7 +114,6 @@ impl Table {
         return Ok((page_num, byte_offset));
     }
 
-    // TODO: check how rows are inserted, there are extra empty rows to fill up the page
     pub fn insert(&mut self, row_to_insert: Row) -> Result<(), ExecError> {
         if self.num_rows >= TABLE_MAX_ROWS {
             return Err(ExecError {
@@ -97,7 +121,8 @@ impl Table {
             });
         }
         if let Some(row) = row_to_insert.into_bytes() {
-            let (page_num, offset) = self.row_slot(self.num_rows)?;
+            let cursor = Cursor::table_end(self.num_rows);
+            let (page_num, offset) = self.cursor_value(&cursor)?;
             if let Some(page) = &mut self.pager.pages[page_num] {
                 page.write(offset, row).unwrap();
                 self.num_rows += 1;
@@ -112,8 +137,9 @@ impl Table {
 
     pub fn select(&mut self) -> Result<Vec<Row>, ExecError> {
         let mut rows = Vec::new();
-        for row_num in 0..self.num_rows {
-            let (page_num, offset) = self.row_slot(row_num).unwrap();
+        let mut cursor = Cursor::table_start(self.num_rows);
+        while !cursor.end_of_table {
+            let (page_num, offset) = self.cursor_value(&cursor).unwrap();
             if let Some(page) = &self.pager.pages[page_num] {
                 let row_bytes = &page.bytes[offset..offset + ROW_SIZE];
                 match Row::from_bytes(row_bytes) {
@@ -122,6 +148,7 @@ impl Table {
                     Err(e) => return Err(e),
                 }
             }
+            cursor.advance();
         }
         Ok(rows)
     }
@@ -221,6 +248,14 @@ impl Page {
     pub fn into_bytes(&self) -> Vec<u8> {
         self.bytes.clone()
     }
+}
+pub struct Stmt {
+    pub stmt_type: StmtType,
+}
+
+pub enum StmtType {
+    StmtInsert(Row),
+    StmtSelect,
 }
 
 #[derive(Debug)]
